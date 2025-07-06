@@ -1,0 +1,136 @@
+﻿using Services;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+
+namespace CurrencyConvertor
+{
+    public partial class MainWindow : Window
+    {
+        private readonly CurrencyService _currencyService;
+        private bool _isDarkTheme = true;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            _currencyService = new CurrencyService();
+            InitializeAsync();
+        }
+
+        private async void InitializeAsync()
+        {
+            await LoadCurrencies();
+            UpdateStatus("Ready");
+        }
+
+        private async Task LoadCurrencies()
+        {
+            try
+            {
+                var currencies = await _currencyService.GetAvailableCurrenciesAsync();
+                var currencyList = currencies.Keys.OrderBy(x => x).ToList();
+
+                FromCurrencyComboBox.ItemsSource = currencyList;
+                ToCurrencyComboBox.ItemsSource = currencyList;
+
+                // Set default values
+                FromCurrencyComboBox.SelectedItem = "USD";
+                ToCurrencyComboBox.SelectedItem = "EUR";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load currencies: {ex.Message}", "Error",
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void ConvertButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!ValidateInput())
+                return;
+
+            ShowLoading(true);
+
+            try
+            {
+                var amount = decimal.Parse(AmountTextBox.Text);
+                var fromCurrency = FromCurrencyComboBox.SelectedItem.ToString();
+                var toCurrency = ToCurrencyComboBox.SelectedItem.ToString();
+
+                var result = await _currencyService.ConvertCurrencyAsync(amount, fromCurrency, toCurrency);
+
+                ResultTextBlock.Text = $"{amount:N2} {fromCurrency} = {result:N2} {toCurrency}";
+                UpdateStatus($"Last updated: {DateTime.Now:HH:mm:ss}");
+            }
+            catch (Exception ex)
+            {
+                ResultTextBlock.Text = "Conversion failed";
+                UpdateStatus($"Error: {ex.Message}");
+                MessageBox.Show($"Conversion failed: {ex.Message}", "Error",
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                ShowLoading(false);
+            }
+        }
+
+        private bool ValidateInput()
+        {
+            if (!decimal.TryParse(AmountTextBox.Text, out _))
+            {
+                MessageBox.Show("Please enter a valid amount.", "Invalid Input",
+                              MessageBoxButton.OK, MessageBoxImage.Warning);
+                AmountTextBox.Focus();
+                return false;
+            }
+
+            if (FromCurrencyComboBox.SelectedItem == null || ToCurrencyComboBox.SelectedItem == null)
+            {
+                MessageBox.Show("Please select both currencies.", "Invalid Selection",
+                              MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            return true;
+        }
+
+        private void SwapButton_Click(object sender, RoutedEventArgs e)
+        {
+            var temp = FromCurrencyComboBox.SelectedItem;
+            FromCurrencyComboBox.SelectedItem = ToCurrencyComboBox.SelectedItem;
+            ToCurrencyComboBox.SelectedItem = temp;
+        }
+
+        private void ThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            _isDarkTheme = !_isDarkTheme;
+            ApplyTheme();
+        }
+
+        private void ApplyTheme()
+        {
+            var themeUri = _isDarkTheme ? "Themes/DarkTheme.xaml" : "Themes/LightTheme.xaml";
+            var theme = new ResourceDictionary { Source = new Uri(themeUri, UriKind.Relative) };
+
+            Application.Current.Resources.MergedDictionaries.Clear();
+            Application.Current.Resources.MergedDictionaries.Add(theme);
+
+            ThemeToggle.Content = _isDarkTheme ? "🌙" : "☀️";
+        }
+
+        private void ShowLoading(bool show)
+        {
+            LoadingProgressBar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            ConvertButton.IsEnabled = !show;
+        }
+
+        private void UpdateStatus(string message)
+        {
+            StatusTextBlock.Text = message;
+        }
+    }
+}
